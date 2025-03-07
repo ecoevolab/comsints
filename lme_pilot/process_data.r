@@ -109,6 +109,7 @@ m1 <- glmer(count ~ log(depth) + i_freq + (1|b_com) +
             family = poisson(link = log) )
 summary(m1)
 AIC(m1)
+BIC(m1)
 
 #' Get the effect of community
 b_com <- ranef(m1, condVar = TRUE, whichel = "b_com", postVar = TRUE)
@@ -152,8 +153,13 @@ res %>%
   theme_classic()
 
 
-
+#' Example of ST00046 showing that it decreases more at 28 than 32 (not significant)
 dat %>%
-  filter(strain == "ST00046") 
+  filter(strain == "ST00046") %>%
+  filter(hrs %in% c(24)) %>%
+  ggplot(aes(col = factor(temp))) +
+  facet_wrap(~community) +
+  geom_segment(aes(x = 0, y = i_freq, xend = temp, yend = count / depth, linetype = exp )) +
+  theme_classic() 
 
 
