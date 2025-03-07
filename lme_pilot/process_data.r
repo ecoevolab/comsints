@@ -83,6 +83,8 @@ Dat <- Dat %>%
             by = c("strain", "community", "exp"))
 Dat
 
+#' # Add modelling variables
+
 
 
 
@@ -90,12 +92,18 @@ Dat
 #' Confirm that count match expected species
 #' In general it does. ST00060 seems to be the only semi problematic
 Dat %>% 
+  filter(community %in% c("R3", "R4")) %>%
   ggplot(aes(x = added == 1, y = count)) +
   facet_wrap(~ strain, scales = "free_y") +
   geom_point(position = position_jitter(width = 0.1, height = 0)) +
   theme_classic()
   
 
+
+Dat %>% filter(strain == "ST00046") %>% filter(community %in% c("R3","R4")) %>% arrange(added) %>% print(n = 200)
+
+Dat %>% filter(community %in% c("R3","R4")) %>%
+  filter(added == 1)
 
 #' # Model with lme4
 library(lme4)
