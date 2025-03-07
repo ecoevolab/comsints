@@ -34,7 +34,7 @@ syncoms
 meta <- Meta %>%
   # filter(community %in% c("R1", "R2")) %>%
   left_join(syncoms %>%
-              select(strain, R1,R2) %>%
+              # select(strain, R1,R2) %>%
               pivot_longer(-strain, names_to = "community", values_to = "presence") %>%
               pivot_wider(names_from = "strain", values_from = "presence"),
             by = "community")
@@ -85,14 +85,36 @@ Dat
 
 #' # Add modelling variables
 
+#' We add variables for things we want to model. We are **ignoring time** for 
+#' the time (;)) being
 
+Dat <- Dat %>%
+  # The effect of community on strain abundance
+  mutate(b_com = paste0(community, "_", strain)) %>%
+  mutate(b_com = replace(b_com, added == 0, NA)) %>%
+  
+  # The effect of biological replicat on strain abundance
+  mutate(b_rep = paste0(exp, "_", strain)) %>%
+  mutate(b_rep = replace(b_rep, added == 0, NA)) %>%
+  
+  # The effect of temperature on strain abundance
+  mutate(b_temp = paste0(temp, "_", strain)) %>%
+  mutate(b_temp = replace(b_temp, added == 0, NA)) %>%
+  
+  # The effect of *temperature x community* on strain abundance
+  
+  # The effect of community *color* on strain abundance
+  
+  # Individual observation-level effect (for overdispersion)
+  mutate(b_obs = as.character(1:n()))
+Dat
 
 
 
 #' Confirm that count match expected species
 #' In general it does. ST00060 seems to be the only semi problematic
 Dat %>% 
-  filter(community %in% c("R3", "R4")) %>%
+  # filter(community %in% c("R3", "R4")) %>%
   ggplot(aes(x = added == 1, y = count)) +
   facet_wrap(~ strain, scales = "free_y") +
   geom_point(position = position_jitter(width = 0.1, height = 0)) +
@@ -100,7 +122,7 @@ Dat %>%
   
 
 
-Dat %>% filter(strain == "ST00046") %>% filter(community %in% c("R3","R4")) %>% arrange(added) %>% print(n = 200)
+Dat %>% filter(strain == "ST00046")  %>% arrange(added) %>% print(n = 200)
 
 Dat %>% filter(community %in% c("R3","R4")) %>%
   filter(added == 1)
