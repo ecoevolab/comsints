@@ -1,17 +1,7 @@
-#' Script to prepare data from pilot for modelling. We require to put every
-#' count observation in a single line in a master data table. We are also
-#' Calculating the frequency of inoculum. *Should we also calculate frequency
-#' at time t-1*
-
-#' The working directory may be set different depending on where are the
-#' relevant files. I'm using NSM's ancom_data files downloaded on 2025-03-06.
-
 setwd("/Users/sur/lab/exp/2025/today")
+
 library(tidyverse)
 
-#' # Read data
-
-#' We add column names to the sample ids (`id`) and strain ids (`strain`)
 Tab <- read_csv("2025-03-06.ancom_data/ancom_data/freq.csv") %>%
   rename(strain = 1)
 Tab
@@ -20,36 +10,34 @@ Meta <- read_csv("2025-03-06.ancom_data/ancom_data/meta.csv") %>%
   rename(id = 1)
 Meta
 
-#' **NOTE**: The following are locations and files in Sur's lab desktop. Format
-#' might be different in someone else
-syncoms <- read_tsv("../../../data/2024_rhizo_pilot_syncom_NS/NS1/syncoms.tsv") %>%
-  full_join(read_tsv("../../../data/2024_rhizo_pilot_syncom_NS/NS2/syncoms.tsv"), 
-            by = "strain")
-syncoms
 
-#' # Format data
-#' We add a column per strain to the metadata table to indicate which species
-#' were added to that community, 1 means added, NA means not added (though
-#' it might be detected still). We create a new object.
+
+syncoms <- read_tsv("../../../data/2024_rhizo_pilot_syncom_NS/NS1/syncoms.tsv")
+
+#' Select two communities to test
+
+# %>% select(community, ST00046, ST00154, ST00101, ST00109, ST00042, ST00060
+
 meta <- Meta %>%
-  # filter(community %in% c("R1", "R2")) %>%
+  filter(community %in% c("R1", "R2")) %>%
   left_join(syncoms %>%
               select(strain, R1,R2) %>%
               pivot_longer(-strain, names_to = "community", values_to = "presence") %>%
               pivot_wider(names_from = "strain", values_from = "presence"),
             by = "community")
-meta 
 
-#' Then we pivot the table so there is one row per *strain x sample* 
-#' combination. The new column added indicates if the relevant strain
-#' was added (1) or not (0)
+meta %>% 
+  print(n = 100)
+
 meta <- meta %>%
   pivot_longer(-c("id", "community", "hrs", "techrep", "exp", "temp", "color_comsint", "community_temp"),
                names_to = "strain", values_to = "added") %>%
   mutate(added = replace_na(added, 0))
-meta
 
-#' Before adding count information we need to homogenize the strain names
+meta %>% 
+  print(n = 100)
+
+
 strains <- Tab$strain
 strains <- strains %>%
   str_replace("NS_042g_27F", "ST00042") %>%
@@ -58,12 +46,13 @@ strains <- strains %>%
 strains
 Tab$strain <- strains
 
-#' Now we pivot the count table to have 1 row per *sample x strain* combination
-#' and we join it with the metadata table. We also calculate the sequencing
-#' depth per sample and add that information to the metadata. We create a new
-#' object
+
 tab <- Tab %>%
   pivot_longer(-strain, names_to = "id", values_to = "count") 
+tab
+
+
+
 Dat <- meta %>%
   left_join(tab %>%
               group_by(id) %>%
@@ -72,8 +61,9 @@ Dat <- meta %>%
   left_join(tab, by = c("id", "strain"))
 Dat
 
-#' Calculate relative abundances of each strain in the inoculum
-#' of each experiment, and add that information to the data
+#' Calculate relative abundances of each strain on the inoculum
+#' of each experiment
+
 Dat <- Dat %>%
   left_join(Dat %>%
               filter(hrs == 0) %>%
@@ -84,9 +74,6 @@ Dat <- Dat %>%
 Dat
 
 
-
-
-
 #' Confirm that count match expected species
 #' In general it does. ST00060 seems to be the only semi problematic
 Dat %>% 
@@ -94,7 +81,7 @@ Dat %>%
   facet_wrap(~ strain, scales = "free_y") +
   geom_point(position = position_jitter(width = 0.1, height = 0)) +
   theme_classic()
-  
+
 
 
 #' # Model with lme4
@@ -136,7 +123,7 @@ res <- tibble(effect = row.names(b_com$b_com),
   arrange(est) %>%
   mutate(effect = factor(effect, levels = effect))
 res
-  
+
 res %>%
   ggplot(aes(x = est, y = effect)) +
   geom_errorbarh(aes(xmin = lower, xmax = upper)) +
