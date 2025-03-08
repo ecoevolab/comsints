@@ -84,35 +84,60 @@ Dat <- Dat %>%
 Dat
 
 #' # Add modelling variables
-
+#' 
 #' We add variables for things we want to model. We are **ignoring time** for 
 #' the time (;)) being
-
-Dat <- Dat %>%
+#' 
+#' ## Assuming design is perfect
+#' 
+#' We discard effects when a strain wasn't added 
+dat <- Dat %>%
   # The effect of community on strain abundance
   mutate(b_com = paste0(community, "_", strain)) %>%
   mutate(b_com = replace(b_com, added == 0, NA)) %>%
-  
-  # The effect of biological replicat on strain abundance
-  mutate(b_rep = paste0(exp, "_", strain)) %>%
-  mutate(b_rep = replace(b_rep, added == 0, NA)) %>%
+  mutate(b_com = replace(b_com, hrs == 0, NA)) %>%
   
   # The effect of temperature on strain abundance
   mutate(b_temp = paste0(temp, "_", strain)) %>%
   mutate(b_temp = replace(b_temp, added == 0, NA)) %>%
-  
-  # The effect of *temperature x community* on strain abundance
+  mutate(b_temp = replace(b_temp, hrs == 0, NA)) %>%
   
   # The effect of community *color* on strain abundance
+  mutate(b_col = paste0(color_comsint, "_", strain)) %>%
+  mutate(b_col = replace(b_col, added == 0, NA)) %>%
+  mutate(b_col = replace(b_col, hrs == 0, NA)) %>%
   
+  # The effect of biological replicate on strain abundance
+  mutate(b_rep = paste0(exp, "_", strain)) %>%
+  mutate(b_rep = replace(b_rep, added == 0, NA)) %>%
+  mutate(b_rep = replace(b_rep, hrs == 0, NA)) %>%
+  
+  # The effect of *temperature x community* on strain abundance
+  mutate(b_temp_com = paste0(temp, "_", community, "_", strain)) %>%
+  mutate(b_temp_com = replace(b_temp_com, added == 0, NA)) %>%
+  mutate(b_temp_com = replace(b_temp_com, hrs == 0, NA)) %>%
+
   # Individual observation-level effect (for overdispersion)
   mutate(b_obs = as.character(1:n()))
-Dat
+dat
+
+# Dat %>%
+#   filter(hrs == 0) %>%
+#   print(n = 500)
+# 
+# 
+# Dat %>%
+#   filter(hrs != 0) %>%
+#   print(n = 1500)
+
+write_tsv(dat, "pilot_dat_perfect_design.tsv")
 
 
-
-#' Confirm that count match expected species
-#' In general it does. ST00060 seems to be the only semi problematic
+#' ## Based on empirical results
+#' ### Error in design construction
+#' 
+#' In general there is a very large difference between the expected (added == 1) 
+#' and unexpected (added != 0) strain counts
 Dat %>% 
   # filter(community %in% c("R3", "R4")) %>%
   ggplot(aes(x = added == 1, y = count)) +
@@ -120,12 +145,60 @@ Dat %>%
   geom_point(position = position_jitter(width = 0.1, height = 0)) +
   theme_classic()
   
+#' We model added as a function of counts and depth and do model selection
+#' To find the best predictors of added
+
+m1 <- glm(added ~ lcount + strain + lcount * strain + community +  lcount * community + exp + shrs + shrs2,
+          data = Dat %>%
+            mutate(shrs = scale(hrs)) %>%
+            mutate(shrs2 = shrs * shrs) %>%
+            mutate(lcount = log(count + 1)),
+          family = binomial(link = "logit"))
+m1
+summary(m1)
+drop(anova(m1, test = "LRT"))
 
 
-Dat %>% filter(strain == "ST00046")  %>% arrange(added) %>% print(n = 200)
+m2 <- glm(added ~ lcount + strain + lcount * strain + community +  lcount * community + shrs + shrs2,
+          data = Dat %>%
+            mutate(shrs = scale(hrs)) %>%
+            mutate(shrs2 = shrs * shrs) %>%
+            mutate(lcount = log(count + 1)),
+          family = binomial(link = "logit"))
+m2
+summary(m2)
+drop(anova(m2, test = "LRT"))
 
-Dat %>% filter(community %in% c("R3","R4")) %>%
-  filter(added == 1)
+
+m3 <- glm(added ~ lcount + strain + lcount * strain + community +  lcount * community + shrs,
+          data = Dat %>%
+            mutate(shrs = scale(hrs)) %>%
+            mutate(shrs2 = shrs * shrs) %>%
+            mutate(lcount = log(count + 1)),
+          family = binomial(link = "logit"))
+m3
+summary(m3)
+drop(anova(m3, test = "LRT"))
+AIC(m1,m2, m3)
+
+#' I'm not conviced of using this method, we would need some gold standard
+#' and training, it seems to miss manu cases where strain is there despite not
+#' added
+hist(predict(m3, type = "response"))
+table(predict(m3, type = "response") >= .8, Dat$added)
+
+Dat %>%
+  filter(predict(m3, type = "response") >= .8 & added == 0)
+
+Dat %>%
+  filter(added == 0) %>%
+  arrange(desc(count)) %>%
+  filter(count > 0) %>%
+  print(., n = nrow(.))
+
+#' Instead lets setup a 200 read threshold for calling a strain present despite
+#' not being added
+
 
 #' # Model with lme4
 library(lme4)
