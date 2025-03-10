@@ -6,17 +6,17 @@
 #' The working directory may be set different depending on where are the
 #' relevant files. I'm using NSM's ancom_data files downloaded on 2025-03-06.
 
-setwd("/Users/sur/lab/exp/2025/today")
+knitr::opts_knit$set(root.dir = "/Users/sur/lab/exp/2025/today")
 library(tidyverse)
 
 #' # Read data
 
 #' We add column names to the sample ids (`id`) and strain ids (`strain`)
-Tab <- read_csv("2025-03-06.ancom_data/ancom_data/freq.csv") %>%
+Tab <- read_csv("../2025-03-06.pilot_lme4/2025-03-06.ancom_data/ancom_data/freq.csv") %>%
   rename(strain = 1)
 Tab
 
-Meta <- read_csv("2025-03-06.ancom_data/ancom_data/meta.csv") %>%
+Meta <- read_csv("../2025-03-06.pilot_lme4/2025-03-06.ancom_data/ancom_data/meta.csv") %>%
   rename(id = 1)
 Meta
 
@@ -134,17 +134,19 @@ write_tsv(dat, "pilot_dat_perfect_design.tsv")
 
 
 #' ## Based on empirical results
-#' ### Error in design construction
-#' 
-#' In general there is a very large difference between the expected (added == 1) 
+ 
+
+#' ### Error in design construction (procrastination)
+#'
+#' In general there is a very large difference between the expected (added == 1)
 #' and unexpected (added != 0) strain counts
-Dat %>% 
+Dat %>%
   # filter(community %in% c("R3", "R4")) %>%
   ggplot(aes(x = added == 1, y = count)) +
   facet_wrap(~ strain, scales = "free_y") +
   geom_point(position = position_jitter(width = 0.1, height = 0)) +
   theme_classic()
-  
+
 #' We model added as a function of counts and depth and do model selection
 #' To find the best predictors of added
 
@@ -198,84 +200,26 @@ Dat %>%
 
 #' Instead lets setup a 200 read threshold for calling a strain present despite
 #' not being added
-
-
-#' # Model with lme4
-library(lme4)
+#' 
 Dat
-
-
-dat <- Dat %>%
-  mutate(b_com = paste0(community, "_", strain)) %>%
-  mutate(b_com = replace(b_com, added == 0, NA)) %>%
-  
-  mutate(b_rep = paste0(exp, "_", strain)) %>%
-  mutate(b_rep = replace(b_rep, added == 0, NA)) %>%
-  
-  mutate(b_temp = paste0(temp, "_", strain)) %>%
-  mutate(b_temp = replace(b_temp, added == 0, NA)) %>%
-  
-  mutate(b_obs = as.character(1:n()))
-dat
-
-m1 <- glmer(count ~ log(depth) + i_freq + (1|b_com) + 
-              (1|b_rep) + (1|b_temp) + (1|b_obs), 
-            data = dat %>%
-              filter(hrs == 24), 
-            family = poisson(link = log) )
-summary(m1)
-AIC(m1)
-BIC(m1)
-
-#' Get the effect of community
-b_com <- ranef(m1, condVar = TRUE, whichel = "b_com", postVar = TRUE)
-res <- tibble(effect = row.names(b_com$b_com),
-              est = b_com$b_com[,1],
-              postVar = attr(b_com$b_com, "postVar")[,,]) %>%
-  mutate(lower = qnorm(p = 0.025, mean = est, sd = sqrt(postVar)),
-         upper = qnorm(p = 0.975, mean = est, sd = sqrt(postVar)),
-         pval = 2 * pnorm(q = -abs(est), mean = 0, sd = sqrt(postVar))) %>%
-  mutate(qval = p.adjust(pval)) %>%
-  arrange(est) %>%
-  mutate(effect = factor(effect, levels = effect))
-res
-  
-res %>%
-  ggplot(aes(x = est, y = effect)) +
-  geom_errorbarh(aes(xmin = lower, xmax = upper)) +
-  geom_point() +
-  geom_vline(xintercept = 0) +
+Dat %>%
+  # filter(added == 0) %>%
+  arrange(desc(count)) %>%
+  mutate(obs = 1:length(count)) %>%
+  ggplot(aes(x = obs, y = count)) +
+  geom_point(aes(col = factor(added == 1))) +
+  geom_hline(yintercept = 200) +
+  scale_x_log10() +
+  # scale_y_log10() +
   theme_classic()
 
-
-#' Get the effect of temp
-b_temp <- ranef(m1, condVar = TRUE, whichel = "b_temp", postVar = TRUE)
-res <- tibble(effect = row.names(b_temp$b_temp),
-              est = b_temp$b_temp[,1],
-              postVar = attr(b_temp$b_temp, "postVar")[,,]) %>%
-  mutate(lower = qnorm(p = 0.025, mean = est, sd = sqrt(postVar)),
-         upper = qnorm(p = 0.975, mean = est, sd = sqrt(postVar)),
-         pval = 2 * pnorm(q = -abs(est), mean = 0, sd = sqrt(postVar))) %>%
-  mutate(qval = p.adjust(pval)) %>%
-  arrange(est) %>%
-  mutate(effect = factor(effect, levels = effect))
-res
-
-res %>%
-  ggplot(aes(x = est, y = effect)) +
-  geom_errorbarh(aes(xmin = lower, xmax = upper)) +
-  geom_point() +
-  geom_vline(xintercept = 0) +
+Dat %>%
+  filter(added == 0) %>%
+  arrange(desc(count)) %>%
+  mutate(obs = 1:length(count)) %>%
+  ggplot(aes(x = obs, y = count)) +
+  geom_point(aes(col = factor(added == 1))) +
+  geom_hline(yintercept = 200) +
+  scale_x_log10() +
+  # scale_y_log10() +
   theme_classic()
-
-
-#' Example of ST00046 showing that it decreases more at 28 than 32 (not significant)
-dat %>%
-  filter(strain == "ST00046") %>%
-  filter(hrs %in% c(24)) %>%
-  ggplot(aes(col = factor(temp))) +
-  facet_wrap(~community) +
-  geom_segment(aes(x = 0, y = i_freq, xend = temp, yend = count / depth, linetype = exp )) +
-  theme_classic() 
-
-
