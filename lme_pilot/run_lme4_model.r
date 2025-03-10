@@ -18,28 +18,46 @@ dat <- Dat %>%
 m1.t1 <-  glmer(count ~ log(depth) + i_freq + 
                   (1|b_com) + (1|b_temp) + (b_temp_com) + (1|b_rep) + (1|b_obs),
                 data = dat, 
-                family = poisson(link = "log") )
+                family = poisson(link = "log"),
+                control=glmerControl(optCtrl=list(maxfun=4*1e4)))
 
 m2.t1 <-  glmer(count ~ log(depth) + i_freq + 
                   (1|b_com) + (1|b_temp) + (1|b_rep) + (1|b_obs),
                 data = dat, 
-                family = poisson(link = "log") )
+                family = poisson(link = "log"),
+                control=glmerControl(optCtrl=list(maxfun=4*1e4)))
 
 m3.t1 <-  glmer(count ~ log(depth) + i_freq + 
                   (1|b_com) + (1|b_temp) + (b_temp_com) + (1|b_rep),
                 data = dat, 
-                family = poisson(link = "log"))
+                family = poisson(link = "log"),
+                control=glmerControl(optCtrl=list(maxfun=4*1e4)))
 
 m4.t1 <-  glmer(count ~ log(depth) + i_freq + 
                   (1|b_com) + (1|b_temp) + (1|b_rep),
                 data = dat, 
-                family = poisson(link = "log") )
+                family = poisson(link = "log"),
+                control=glmerControl(optCtrl=list(maxfun=4*1e4)))
                 
 AIC(m1.t1, m2.t1, m3.t1, m4.t1)
 BIC(m1.t1, m2.t1, m3.t1, m4.t1)
 
+#' Now fit the negative binomial
+
+m5.t1 <- glmer.nb(count ~ log(depth) + i_freq + 
+                    (1|b_com) + (1|b_temp) + (b_temp_com) + (1|b_rep),
+                  data = dat)
+
+m6.t1 <- glmer.nb(count ~ log(depth) + i_freq + 
+                    (1|b_com) + (1|b_temp) + (1|b_rep),
+                  data = dat)
 
 
+
+AIC(m1.t1, m2.t1, m3.t1, m4.t1, m5.t1, m6.t1)
+BIC(m1.t1, m2.t1, m3.t1, m4.t1, m5.t1, m6.t1)
+
+save()
 
 summary(m1.t1)
 
