@@ -1,5 +1,5 @@
 # rmarkdown::render("/Users/sur/lab/src/NSM_comsints/lme_pilot/run_lme4_model.r", output_format = "html_document", output_dir = "/Users/sur/lab/exp/2025/today")
-setwd("/Users/sur/lab/exp/2025/today")
+# setwd("/Users/sur/lab/exp/2025/today")
 knitr::opts_knit$set(root.dir = "/Users/sur/lab/exp/2025/today")
 
 library(tidyverse)
