@@ -16,7 +16,7 @@ dat <- Dat %>%
 #' Four basic poisson models to check the effect of the overdispersion
 #' variable (b_obs) and the interaction (temp * community) effects
 m1.t1 <-  glmer(count ~ log(depth) + i_freq + 
-                  (1|b_com) + (1|b_temp) + (b_temp_com) + (1|b_rep) + (1|b_obs),
+                  (1|b_com) + (1|b_temp) + (1|b_temp_com) + (1|b_rep) + (1|b_obs),
                 data = dat, 
                 family = poisson(link = "log"),
                 control=glmerControl(optCtrl=list(maxfun=4*1e4)))
@@ -28,7 +28,7 @@ m2.t1 <-  glmer(count ~ log(depth) + i_freq +
                 control=glmerControl(optCtrl=list(maxfun=4*1e4)))
 
 m3.t1 <-  glmer(count ~ log(depth) + i_freq + 
-                  (1|b_com) + (1|b_temp) + (b_temp_com) + (1|b_rep),
+                  (1|b_com) + (1|b_temp) + (1|b_temp_com) + (1|b_rep),
                 data = dat, 
                 family = poisson(link = "log"),
                 control=glmerControl(optCtrl=list(maxfun=4*1e4)))
@@ -47,7 +47,7 @@ BIC(m1.t1, m2.t1, m3.t1, m4.t1)
 #' Now fit the negative binomial
 
 m5.t1 <- glmer.nb(count ~ log(depth) + i_freq + 
-                    (1|b_com) + (1|b_temp) + (b_temp_com) + (1|b_rep),
+                    (1|b_com) + (1|b_temp) + (1|b_temp_com) + (1|b_rep),
                   data = dat)
 
 m6.t1 <- glmer.nb(count ~ log(depth) + i_freq + 
@@ -107,10 +107,11 @@ save(m1.t1, m2.t1, m3.t1, m4.t1, m5.t1, m6.t1, file = "models.rdat")
 
 #' Will run brms with the negbinomial model
 library(brms)
+load("brms_models.rdat")
 
-
+# Takes about 6 minutes to run, significant numeric issues.
 m5.br.t1 <- brm(count ~ log(depth) + i_freq + 
-                  (1|b_com) + (1|b_temp) + (b_temp_com) + (1|b_rep),
+                  (1|b_com) + (1|b_temp) + (1|b_temp_com) + (1|b_rep),
                 data = dat,
                 chains = 4,
                 iter = 4000,
@@ -119,7 +120,11 @@ m5.br.t1 <- brm(count ~ log(depth) + i_freq +
                 thin = 2,
                 family = "negbinomial")
 
+summary(m5.br.t1)
+summary(m5.t1)
+pairs(m5.br.t1)
 
+# Takes about 2 minutes to run with compilation
 m6.br.t1 <- brm(count ~ log(depth) + i_freq + 
                   (1|b_com) + (1|b_temp) + (1|b_rep),
                 data = dat,
@@ -134,9 +139,15 @@ m6.br.t1 <- brm(count ~ log(depth) + i_freq +
 summary(m6.br.t1)
 summary(m6.t1)
 
+save(m5.br.t1, m6.br.t1, file = "brms_models.rdat")
 
+#' We compare with waic and loo
 brms::waic(m5.br.t1, m6.br.t1)
 
+m5.br.t1.loo <- brms::loo(m5.br.t1)
+m6.br.t1.loo <- brms::loo(m6.br.t1)
+m5.br.t1.loo
+m6.br.t1.loo
 
 
 summary(m1.t1)
