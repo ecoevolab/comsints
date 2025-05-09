@@ -1,0 +1,225 @@
+#' Script to prepare data from pilot for modelling. We require to put every
+#' count observation in a single line in a master data table. We are also
+#' Calculating the frequency of inoculum. *Should we also calculate frequency
+#' at time t-1*
+
+#' The working directory may be set different depending on where are the
+#' relevant files. I'm using NSM's ancom_data files downloaded on 2025-03-06.
+
+knitr::opts_knit$set(root.dir = "/Users/sur/lab/exp/2025/today")
+library(tidyverse)
+
+#' # Read data
+
+#' We add column names to the sample ids (`id`) and strain ids (`strain`)
+Tab <- read_csv("../2025-03-06.pilot_lme4/2025-03-06.ancom_data/ancom_data/freq.csv") %>%
+  rename(strain = 1)
+Tab
+
+Meta <- read_csv("../2025-03-06.pilot_lme4/2025-03-06.ancom_data/ancom_data/meta.csv") %>%
+  rename(id = 1)
+Meta
+
+#' **NOTE**: The following are locations and files in Sur's lab desktop. Format
+#' might be different in someone else
+syncoms <- read_tsv("../../../data/2024_rhizo_pilot_syncom_NS/NS1/syncoms.tsv") %>%
+  full_join(read_tsv("../../../data/2024_rhizo_pilot_syncom_NS/NS2/syncoms.tsv"), 
+            by = "strain")
+syncoms
+
+#' # Format data
+#' We add a column per strain to the metadata table to indicate which species
+#' were added to that community, 1 means added, NA means not added (though
+#' it might be detected still). We create a new object.
+meta <- Meta %>%
+  # filter(community %in% c("R1", "R2")) %>%
+  left_join(syncoms %>%
+              # select(strain, R1,R2) %>%
+              pivot_longer(-strain, names_to = "community", values_to = "presence") %>%
+              pivot_wider(names_from = "strain", values_from = "presence"),
+            by = "community")
+meta 
+
+#' Then we pivot the table so there is one row per *strain x sample* 
+#' combination. The new column added indicates if the relevant strain
+#' was added (1) or not (0)
+meta <- meta %>%
+  pivot_longer(-c("id", "community", "hrs", "techrep", "exp", "temp", "color_comsint", "community_temp"),
+               names_to = "strain", values_to = "added") %>%
+  mutate(added = replace_na(added, 0))
+meta
+
+#' Before adding count information we need to homogenize the strain names
+strains <- Tab$strain
+strains <- strains %>%
+  str_replace("NS_042g_27F", "ST00042") %>%
+  str_replace("NS_164C_27F", "ST00164") %>%
+  str_replace("NS_110C_1_27F", "ST00110") 
+strains
+Tab$strain <- strains
+
+#' Now we pivot the count table to have 1 row per *sample x strain* combination
+#' and we join it with the metadata table. We also calculate the sequencing
+#' depth per sample and add that information to the metadata. We create a new
+#' object
+tab <- Tab %>%
+  pivot_longer(-strain, names_to = "id", values_to = "count") 
+Dat <- meta %>%
+  left_join(tab %>%
+              group_by(id) %>%
+              summarize(depth = sum(count)),
+            by = "id") %>%
+  left_join(tab, by = c("id", "strain"))
+Dat
+
+#' Calculate relative abundances of each strain in the inoculum
+#' of each experiment, and add that information to the data
+Dat <- Dat %>%
+  left_join(Dat %>%
+              filter(hrs == 0) %>%
+              group_by(strain, community, exp) %>%
+              summarise(i_freq = sum(count) / sum(depth),
+                        .groups = "drop"),
+            by = c("strain", "community", "exp"))
+Dat
+
+#' # Add modelling variables
+#' 
+#' We add variables for things we want to model. We are **ignoring time** for 
+#' the time (;)) being
+#' 
+#' ## Assuming design is perfect
+#' 
+#' We discard effects when a strain wasn't added 
+dat <- Dat %>%
+  # The effect of community on strain abundance
+  mutate(b_com = paste0(community, "_", strain)) %>%
+  mutate(b_com = replace(b_com, added == 0, NA)) %>%
+  mutate(b_com = replace(b_com, hrs == 0, NA)) %>%
+  
+  # The effect of temperature on strain abundance
+  mutate(b_temp = paste0(temp, "_", strain)) %>%
+  mutate(b_temp = replace(b_temp, added == 0, NA)) %>%
+  mutate(b_temp = replace(b_temp, hrs == 0, NA)) %>%
+  
+  # The effect of community *color* on strain abundance
+  mutate(b_col = paste0(color_comsint, "_", strain)) %>%
+  mutate(b_col = replace(b_col, added == 0, NA)) %>%
+  mutate(b_col = replace(b_col, hrs == 0, NA)) %>%
+  
+  # The effect of biological replicate on strain abundance
+  mutate(b_rep = paste0(exp, "_", strain)) %>%
+  mutate(b_rep = replace(b_rep, added == 0, NA)) %>%
+  mutate(b_rep = replace(b_rep, hrs == 0, NA)) %>%
+  
+  # The effect of *temperature x community* on strain abundance
+  mutate(b_temp_com = paste0(temp, "_", community, "_", strain)) %>%
+  mutate(b_temp_com = replace(b_temp_com, added == 0, NA)) %>%
+  mutate(b_temp_com = replace(b_temp_com, hrs == 0, NA)) %>%
+
+  # Individual observation-level effect (for overdispersion)
+  mutate(b_obs = as.character(1:n()))
+dat
+
+# Dat %>%
+#   filter(hrs == 0) %>%
+#   print(n = 500)
+# 
+# 
+# Dat %>%
+#   filter(hrs != 0) %>%
+#   print(n = 1500)
+
+write_tsv(dat, "pilot_dat_perfect_design.tsv")
+
+
+#' ## Based on empirical results
+ 
+
+#' ### Error in design construction (procrastination)
+#'
+#' In general there is a very large difference between the expected (added == 1)
+#' and unexpected (added != 0) strain counts
+Dat %>%
+  # filter(community %in% c("R3", "R4")) %>%
+  ggplot(aes(x = added == 1, y = count)) +
+  facet_wrap(~ strain, scales = "free_y") +
+  geom_point(position = position_jitter(width = 0.1, height = 0)) +
+  theme_classic()
+
+#' We model added as a function of counts and depth and do model selection
+#' To find the best predictors of added
+
+m1 <- glm(added ~ lcount + strain + lcount * strain + community +  lcount * community + exp + shrs + shrs2,
+          data = Dat %>%
+            mutate(shrs = scale(hrs)) %>%
+            mutate(shrs2 = shrs * shrs) %>%
+            mutate(lcount = log(count + 1)),
+          family = binomial(link = "logit"))
+m1
+summary(m1)
+drop(anova(m1, test = "LRT"))
+
+
+m2 <- glm(added ~ lcount + strain + lcount * strain + community +  lcount * community + shrs + shrs2,
+          data = Dat %>%
+            mutate(shrs = scale(hrs)) %>%
+            mutate(shrs2 = shrs * shrs) %>%
+            mutate(lcount = log(count + 1)),
+          family = binomial(link = "logit"))
+m2
+summary(m2)
+drop(anova(m2, test = "LRT"))
+
+
+m3 <- glm(added ~ lcount + strain + lcount * strain + community +  lcount * community + shrs,
+          data = Dat %>%
+            mutate(shrs = scale(hrs)) %>%
+            mutate(shrs2 = shrs * shrs) %>%
+            mutate(lcount = log(count + 1)),
+          family = binomial(link = "logit"))
+m3
+summary(m3)
+drop(anova(m3, test = "LRT"))
+AIC(m1,m2, m3)
+
+#' I'm not conviced of using this method, we would need some gold standard
+#' and training, it seems to miss manu cases where strain is there despite not
+#' added
+hist(predict(m3, type = "response"))
+table(predict(m3, type = "response") >= .8, Dat$added)
+
+Dat %>%
+  filter(predict(m3, type = "response") >= .8 & added == 0)
+
+Dat %>%
+  filter(added == 0) %>%
+  arrange(desc(count)) %>%
+  filter(count > 0) %>%
+  print(., n = nrow(.))
+
+#' Instead lets setup a 200 read threshold for calling a strain present despite
+#' not being added
+#' 
+Dat
+Dat %>%
+  # filter(added == 0) %>%
+  arrange(desc(count)) %>%
+  mutate(obs = 1:length(count)) %>%
+  ggplot(aes(x = obs, y = count)) +
+  geom_point(aes(col = factor(added == 1))) +
+  geom_hline(yintercept = 200) +
+  scale_x_log10() +
+  # scale_y_log10() +
+  theme_classic()
+
+Dat %>%
+  filter(added == 0) %>%
+  arrange(desc(count)) %>%
+  mutate(obs = 1:length(count)) %>%
+  ggplot(aes(x = obs, y = count)) +
+  geom_point(aes(col = factor(added == 1))) +
+  geom_hline(yintercept = 200) +
+  scale_x_log10() +
+  # scale_y_log10() +
+  theme_classic()
